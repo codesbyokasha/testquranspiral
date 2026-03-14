@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+    <title>Quran Spiral Studio</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&display=swap" rel="stylesheet">
+    
+    <style>
+        /* --- STYLESSSSS --- */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #222; /* Dark Studio BG */
+            margin: 0; padding: 0;
+            height: 100vh;
+            display: flex; flex-direction: column;
+        }
+
+        /* --- CONTROL PANEL CPL --- */
+        .controls {
+            background: white;
+            padding: 8px;
+            display: flex; flex-wrap: wrap; gap: 8px;
+            justify-content: center; align-items: center;
+            border-bottom: 3px solid #007bff;
+            z-index: 100;
+        }
+
+        .panel-group {
+            background: #f8f9fa; border: 1px solid #ddd;
+            padding: 6px 10px; border-radius: 6px;
+            display: flex; flex-direction: column; justify-content: center;
+        }
+        
+        /* Flex Wrap added to allow wrapping on mobile */
+        .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+        
+        /* Keeps labels and their inputs together when wrapping */
+        .item-pair { display: flex; align-items: center; gap: 3px; }
+
+        .group-label { 
+            font-size: 10px; font-weight: bold; color: #555; 
+            text-transform: uppercase; margin-bottom: 4px; border-bottom: 1px solid #eee; padding-bottom: 2px;
+        }
+        .input-label { font-size: 9px; color: #666; font-weight: bold; }
+
+        input, select, textarea { padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
+        input[type="number"] { width: 45px; }
+        input[type="color"] { width: 30px; height: 26px; padding: 0; border: none; cursor: pointer; }
+        input[type="checkbox"] { width: auto; margin: 0; cursor: pointer; }
+        
+        button {
+            padding: 6px 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; font-size: 12px;
+            transition: opacity 0.2s;
+        }
+        button:hover { opacity: 0.8; }
+        .btn-blue { background: #007bff; }
+        .btn-green { background: #28a745; }
+        .btn-grey { background: #6c757d; }
+
+        /* --- WORKSPACE --- */
+        .workspace {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            display: flex; justify-content: center; align-items: center;
+            background: #333;
+        }
+
+        .scroll-container {
+            width: 100%; height: 100%;
+            overflow: auto; /* Allow native scrolling */
+            display: flex; justify-content: center; align-items: flex-start;
+            padding: 50px;
+            touch-action: pan-x pan-y; /* Enable touch gestures */
+        }
+
+        #paper {
+            background-color: white;
+            width: 800px; height: 800px;
+            box-shadow: 0 0 60px rgba(0,0,0,0.6);
+            transition: width 0.1s, height 0.1s;
+            position: relative; /* REQUIRED for image overlay */
+        }
+
+        svg { width: 100%; height: 100%; display: block; }
+        
+        /* Font Config - Default placeholder before JS loads */
+        text { font-family: 'Amiri', 'Arial', sans-serif; font-weight: 700; direction: rtl; }
+
+        /* --- IMAGE DRAGGABLE OVERLAY --- */
+        #overlayContainer {
+            display: none;
+            position: absolute;
+            top: 300px; left: 300px; /* Center-ish default start */
+            width: 200px; height: 200px;
+            border: 2px dashed #007bff;
+            cursor: move;
+            resize: both; /* Native browser resize handles */
+            overflow: hidden;
+            z-index: 10;
+            box-sizing: border-box;
+            background: rgba(255,255,255,0.01); /* Prevent empty click-throughs */
+        }
+        #overlayImage {
+            width: 100%; height: 100%;
+            object-fit: contain; /* Keeps aspect ratio inside square box */
+            pointer-events: none; /* Let drag events hit container */
+        }
+        .close-img-btn {
+            position: absolute; top: 0; right: 0;
+            background: red; color: white; border: none;
+            cursor: pointer; padding: 4px 8px;
+            font-size: 12px; font-weight: bold;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="controls">
+        <div class="panel-group">
+            <div class="group-label">Source Material</div>
+            <div class="row">
+                <div class="item-pair">
+                    <span class="input-label">Surah:</span>
+                    <input type="number" id="surahNum" value="1" placeholder="#">
+                </div>
+                <button class="btn-grey" onclick="fetchSurah()">Fetch</button>
+                <button class="btn-grey" onclick="toggleManual()">✎ Text</button>
+            </div>
+            <textarea id="manualInput" rows="2" dir="rtl" style="display:none; width: 180px; margin-top:4px;" placeholder="Paste Arabic text here..." oninput="generate()"></textarea>
+            
+            <div class="row" id="manualControls" style="display:none; margin-top: 5px;">
+                <div class="item-pair">
+                    <input type="checkbox" id="stripAiraab" onchange="generate()">
+                    <span class="input-label" style="cursor: pointer;" onclick="document.getElementById('stripAiraab').click()">Remove Airaab</span>
+                </div>
+                <div class="item-pair" style="margin-left: 5px;">
+                    <input type="checkbox" id="separateLetters" onchange="generate()">
+                    <span class="input-label" style="cursor: pointer;" onclick="document.getElementById('separateLetters').click()">Separate Letters</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel-group">
+            <div class="group-label">Visual Styles</div>
+            <div class="row">
+                <div class="item-pair">
+                    <span class="input-label">Color:</span>
+                    <input type="color" id="textColor" value="#000000" onchange="generate()">
+                </div>
+                
+                <div class="item-pair">
+                    <span class="input-label">Font:</span>
+                    <select id="fontSelect" onchange="changeFont()" style="width:110px;">
+                        <option value="saleem">PDMS Saleem</option>
+                        <option value="alqalam">Al Qalam</option>
+                        <option value="custom">Custom Font...</option>
+                    </select>
+                    <input type="file" id="customFontUpload" accept=".ttf,.otf,.woff,.woff2" style="display:none;" onchange="handleCustomFontUpload(event)">
+                </div>
+
+                <div class="item-pair">
+                    <span class="input-label">Size:</span>
+                    <input type="number" id="fontSize" value="40" onchange="generate()">
+                </div>
+                
+                <div class="item-pair">
+                    <span class="input-label">Gap:</span>
+                    <input type="number" id="gap" value="45" onchange="generate()">
+                </div>
+            </div>
+        </div>
+
+        <div class="panel-group">
+            <div class="group-label">Layout Options</div>
+            <div class="row">
+                <div class="item-pair">
+                    <span class="input-label">Dir:</span>
+                    <select id="direction" onchange="generate()" style="width:80px;">
+                        <option value="center">Center Out</option>
+                        <option value="outer">Outer In</option>
+                    </select>
+                </div>
+                
+                <div class="item-pair">
+                    <span class="input-label">Center Space:</span>
+                    <input type="number" id="squareSize" value="100" onchange="generate()">
+                    <span class="input-label">px</span>
+                </div>
+
+                <div class="item-pair" style="border-left: 1px solid #ddd; padding-left: 8px; margin-left: 4px;">
+                    <input type="file" id="imageUpload" accept="image/*" style="display:none;" onchange="handleImageUpload(event)">
+                    <button class="btn-grey" onclick="document.getElementById('imageUpload').click()">+ Image</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel-group" style="background:none; border:none; padding-top: 14px;">
+            <div class="row">
+                <button class="btn-blue" onclick="generate()">Generate</button>
+                <button class="btn-green" onclick="downloadPNG()">Download PNG</button>
+                <button class="btn-grey" id="copyBtn" style="display:none;" onclick="copyProcessedText()">Copy Processed Text</button>
+            </div>
+        </div>
+        
+        <div id="status" style="width:100%; text-align:center; color:#28a745; font-size:11px; margin-top:4px; font-weight:bold;">Initializing...</div>
+    </div>
+
+    <div class="workspace">
+        <div class="scroll-container">
+            <div id="paper">
+                <svg id="mainSvg" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"></svg>
+                
+                <div id="overlayContainer" style="left: 300px; top: 300px;">
+                    <img id="overlayImage" src="" />
+                    <button class="close-img-btn" onclick="removeImage()">X</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="measureCanvas" style="display:none;"></canvas>
+
+    <script>
+        let fullText = "";
+        let isManual = false;
+        
+        // Font Variables
+        let loadedFonts = { alqalam: null, saleem: null, custom: null };
+        let customFontData = null; 
+        let currentFontFamily = "'Amiri', 'Arial', sans-serif"; 
+        let currentFontWeight = "normal";
+        let previousFont = "saleem"; 
+
+        function blobToBase64(blob) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.readAsDataURL(blob);
+            });
+        }
+
+        // --- AUTOMATIC LOADING OF FONTS ---
+        window.onload = async () => {
+            const stat = document.getElementById('status');
+            stat.innerText = "Loading Fonts...";
+            
+            try {
+                const [reqAlQalam, reqSaleem] = await Promise.all([
+                    fetch('fonts/alqalam.ttf').catch(() => null),
+                    fetch('fonts/pdms_saleem.ttf').catch(() => null)
+                ]);
+
+                if (reqAlQalam && reqAlQalam.ok) {
+                    const blob1 = await reqAlQalam.blob();
+                    loadedFonts.alqalam = await blobToBase64(blob1);
+                }
+                if (reqSaleem && reqSaleem.ok) {
+                    const blob2 = await reqSaleem.blob();
+                    loadedFonts.saleem = await blobToBase64(blob2);
+                }
+                if (!loadedFonts.alqalam && !loadedFonts.saleem) {
+                    throw new Error("No fonts could be loaded.");
+                }
+
+                if (loadedFonts.saleem) {
+                    customFontData = loadedFonts.saleem;
+                    document.getElementById('fontSelect').value = 'saleem';
+                    document.getElementById('gap').value = 45;
+                    previousFont = 'saleem';
+                } else {
+                    customFontData = loadedFonts.alqalam;
+                    document.getElementById('fontSelect').value = 'alqalam';
+                    document.getElementById('gap').value = 60;
+                    previousFont = 'alqalam';
+                }
+
+                currentFontFamily = "'CustomArabicFont'";
+                injectFontFace(customFontData);
+                
+                stat.innerText = "Ready (Fonts Loaded)";
+                fetchSurah(); 
+
+            } catch(e) {
+                console.error(e);
+                stat.innerText = "Font Error: Using System Font";
+                stat.style.color = "red";
+                fetchSurah();
+            }
+        };
+
+        // --- DRAG AND DROP IMAGE LOGIC ---
+        let overlayBase64 = null;
+        const overlay = document.getElementById('overlayContainer');
+        let isDragging = false, startX, startY, startLeft, startTop;
+
+        overlay.addEventListener('mousedown', startDrag);
+        overlay.addEventListener('touchstart', startDrag, {passive: false});
+        window.addEventListener('mousemove', drag);
+        window.addEventListener('touchmove', drag, {passive: false});
+        window.addEventListener('mouseup', stopDrag);
+        window.addEventListener('touchend', stopDrag);
+
+        function startDrag(e) {
+            if (e.target.tagName.toLowerCase() === 'button') return;
+            const rect = overlay.getBoundingClientRect();
+            
+            // Allow native CSS resize to trigger instead of drag if clicking bottom right corner
+            const clientX = e.clientX || e.touches[0].clientX;
+            const clientY = e.clientY || e.touches[0].clientY;
+            if (clientX > rect.right - 25 && clientY > rect.bottom - 25) return; 
+
+            isDragging = true;
+            startX = clientX;
+            startY = clientY;
+            startLeft = parseFloat(overlay.style.left) || 300;
+            startTop = parseFloat(overlay.style.top) || 300;
+            e.preventDefault();
+        }
+
+        function drag(e) {
+            if (!isDragging) return;
+            const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+            const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+            overlay.style.left = (startLeft + clientX - startX) + 'px';
+            overlay.style.top = (startTop + clientY - startY) + 'px';
+        }
+
+        function stopDrag() { isDragging = false; }
+
+        async function handleImageUpload(e) {
+            const file = e.target.files[0];
+            if(!file) return;
+            try {
+                overlayBase64 = await blobToBase64(file);
+                document.getElementById('overlayImage').src = overlayBase64;
+                overlay.style.display = 'block';
+            } catch(err) {
+                console.error(err);
+                alert("Failed to load image");
+            }
+            e.target.value = ''; // reset
+        }
+
+        function removeImage() {
+            overlay.style.display = 'none';
+            overlayBase64 = null;
+        }
+        // ------------------------------------
+
+        function toggleManual() {
+            const box = document.getElementById('manualInput');
+            const manualControls = document.getElementById('manualControls');
+            const copyBtn = document.getElementById('copyBtn');
+            
+            if (box.style.display === 'none') {
+                box.style.display = 'block';
+                manualControls.style.display = 'flex';
+                copyBtn.style.display = 'inline-block';
+                isManual = true;
+            } else {
+                box.style.display = 'none';
+                manualControls.style.display = 'none';
+                copyBtn.style.display = 'none';
+                isManual = false;
+            }
+        }
+
+        function changeFont() {
+            const selected = document.getElementById('fontSelect').value;
+            if (selected === 'custom') {
+                document.getElementById('customFontUpload').click();
+                return; 
+            }
+            if (loadedFonts[selected]) {
+                customFontData = loadedFonts[selected];
+                injectFontFace(customFontData);
+                previousFont = selected;
+                if (selected === 'saleem') document.getElementById('gap').value = 45;
+                else if (selected === 'alqalam') document.getElementById('gap').value = 60;
+                generate();
+            } else {
+                alert("This font failed to load initially.");
+            }
+        }
+
+        async function handleCustomFontUpload(event) {
+            const file = event.target.files[0];
+            if (!file) {
+                document.getElementById('fontSelect').value = previousFont;
+                return;
+            }
+            const status = document.getElementById('status');
+            status.innerText = "Processing Custom Font...";
+            status.style.color = "orange";
+            try {
+                const base64 = await blobToBase64(file);
+                loadedFonts.custom = base64;
+                customFontData = base64;
+                previousFont = 'custom';
+                injectFontFace(customFontData);
+                generate();
+                status.innerText = "Custom Font Loaded Successfully!";
+                status.style.color = "#28a745";
+            } catch (e) {
+                console.error("Error loading custom font:", e);
+                status.innerText = "Failed to load custom font.";
+                status.style.color = "red";
+                document.getElementById('fontSelect').value = previousFont;
+            }
+            event.target.value = '';
+        }
+
+        function injectFontFace(base64) {
+            const old = document.getElementById('dynamicFontStyle');
+            if(old) old.remove();
+
+            const newStyle = document.createElement('style');
+            newStyle.id = 'dynamicFontStyle';
+            newStyle.textContent = `
+                @font-face {
+                    font-family: 'CustomArabicFont';
+                    src: url('${base64}');
+                }
+            `;
+            document.head.appendChild(newStyle);
+            currentFontFamily = "'CustomArabicFont'";
+        }
+
+        async function fetchSurah() {
+            if(isManual) {
+                fullText = document.getElementById('manualInput').value;
+                if(!fullText) return alert("Please paste text first");
+                document.getElementById('status').innerText = "Using Manual Text";
+                generate();
+                return;
+            }
+
+            const num = document.getElementById('surahNum').value;
+            const s = document.getElementById('status');
+            s.innerText = "Loading Text..."; s.style.color = "orange";
+            
+            try {
+                const r = await fetch(`https://api.alquran.cloud/v1/surah/${num}/quran-simple-clean`);
+                const d = await r.json();
+                fullText = d.data.ayahs.map(a => a.text.replace(/[۞۝]/g, '').trim()).join("  •  ") + "  •  ";
+                s.innerText = "Loaded: " + d.data.englishName; s.style.color = "#28a745";
+                generate();
+            } catch(e) {
+                s.innerText = "Error loading text"; s.style.color = "red";
+            }
+        }
+
+        function generate() {
+            if(isManual) {
+                fullText = document.getElementById('manualInput').value || "";
+                const stripAiraab = document.getElementById('stripAiraab').checked;
+                const separateLetters = document.getElementById('separateLetters').checked;
+
+                if (stripAiraab) {
+                    fullText = fullText.replace(/[\u06D6-\u06ED\u06DD\u06DE\u06E9]/gu, '');
+                    fullText = fullText.replace(/[\p{P}\p{S}\p{N}a-zA-Z]/gu, ' ');
+                    fullText = fullText.replace(/\p{M}/gu, '');
+                    fullText = fullText.replace(/\s+/g, ' ').trim();
+                }
+                if (separateLetters) {
+                    fullText = fullText.replace(/\s+/g, '').split('').join(' ');
+                }
+            }
+
+            if(!fullText) {
+                document.getElementById('mainSvg').innerHTML = "";
+                return;
+            }
+
+            const svg = document.getElementById('mainSvg');
+            svg.innerHTML = "";
+
+            const color = document.getElementById('textColor').value;
+            const fontSize = parseInt(document.getElementById('fontSize').value);
+            const gap = parseInt(document.getElementById('gap').value);
+            const direction = document.getElementById('direction').value;
+            const squareSize = parseInt(document.getElementById('squareSize').value);
+
+            const ctx = document.getElementById('measureCanvas').getContext('2d');
+            ctx.font = `${currentFontWeight} ${fontSize}px ${currentFontFamily}`;
+            const textLen = ctx.measureText(fullText).width;
+
+            const b = gap / (2 * Math.PI);
+            let startRadius = (squareSize / 2) + 10; 
+            let startTheta = startRadius / b;
+            const endTheta = Math.sqrt( (2 * (textLen + 3000) / b) + (startTheta*startTheta) );
+
+            const steps = 600 * ((endTheta - startTheta)/6);
+            const stepSize = (endTheta - startTheta) / steps;
+            
+            let points = [];
+            for(let t = startTheta; t <= endTheta; t+=stepSize) {
+                points.push({ x: (b*t)*Math.cos(t), y: (b*t)*Math.sin(t) });
+            }
+            if(direction === "center") points.reverse();
+
+            if(points.length < 2) return;
+            let d = `M ${points[0].x} ${points[0].y}`;
+            for(let i=1; i<points.length; i++) d += ` L ${points[i].x} ${points[i].y}`;
+
+            const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
+            if (customFontData) {
+                style.textContent = `
+                    @font-face { font-family: 'CustomArabicFont'; src: url('${customFontData}'); }
+                    text { font-family: 'CustomArabicFont'; font-weight: ${currentFontWeight}; direction: rtl; }
+                `;
+            } else {
+                style.textContent = `text { font-family: serif; font-weight: 700; direction: rtl; }`;
+            }
+            svg.appendChild(style);
+
+            const bgRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            bgRect.setAttribute("fill", "#ffffff"); 
+            svg.appendChild(bgRect);
+
+            const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            path.setAttribute("id", "spiralP");
+            path.setAttribute("d", d);
+            path.setAttribute("fill", "none");
+            svg.appendChild(path);
+
+            const txt = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            txt.setAttribute("font-size", fontSize);
+            txt.setAttribute("fill", color); 
+            txt.setAttribute("dy", fontSize * 0.35);
+
+            const tp = document.createElementNS("http://www.w3.org/2000/svg", "textPath");
+            tp.setAttribute("href", "#spiralP");
+            tp.textContent = fullText;
+            tp.setAttribute("startOffset", "100%");
+            if(direction === "center") tp.setAttribute("side", "right");
+            
+            txt.appendChild(tp);
+            svg.appendChild(txt);
+
+            const maxR = b * endTheta;
+            const dim = (maxR * 2) + (fontSize * 4);
+            const minCoord = -dim / 2;
+
+            svg.setAttribute("viewBox", `${minCoord} ${minCoord} ${dim} ${dim}`);
+            svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+            
+            bgRect.setAttribute("x", minCoord);
+            bgRect.setAttribute("y", minCoord);
+            bgRect.setAttribute("width", dim);
+            bgRect.setAttribute("height", dim);
+        }
+
+        function copyProcessedText() {
+            if (!fullText) return;
+            navigator.clipboard.writeText(fullText).then(() => {
+                const status = document.getElementById('status');
+                status.innerText = "Processed Text Copied!";
+                status.style.color = "#007bff";
+                setTimeout(() => { 
+                    status.innerText = "Ready"; 
+                    status.style.color = "#28a745";
+                }, 2000);
+            }).catch(err => {
+                console.error('Failed to copy text: ', err);
+                alert("Failed to copy to clipboard.");
+            });
+        }
+
+        // --- EXPORT WITH IMAGE INJECTION ---
+        function downloadPNG() {
+            const svg = document.getElementById('mainSvg');
+            const status = document.getElementById('status');
+            status.innerText = "Generating 8K PNG...";
+
+            const renderSize = 8000;
+            const oldW = svg.getAttribute("width");
+            const oldH = svg.getAttribute("height");
+            svg.setAttribute("width", renderSize);
+            svg.setAttribute("height", renderSize);
+            svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+
+            // --- INJECT HTML IMAGE INTO SVG BEFORE EXPORT ---
+            let injectedImage = null;
+            if (overlayBase64 && overlay.style.display !== 'none') {
+                const left = parseFloat(overlay.style.left) || 300;
+                const top = parseFloat(overlay.style.top) || 300;
+                const width = parseFloat(window.getComputedStyle(overlay).width);
+                const height = parseFloat(window.getComputedStyle(overlay).height);
+
+                // Map 800px paper coordinates to SVG viewBox coordinates
+                const viewBox = svg.getAttribute("viewBox").split(' ').map(Number);
+                const scale = viewBox[2] / 800; 
+
+                injectedImage = document.createElementNS("http://www.w3.org/2000/svg", "image");
+                injectedImage.setAttributeNS("http://www.w3.org/1999/xlink", "href", overlayBase64);
+                injectedImage.setAttribute("href", overlayBase64); // Fallback
+                injectedImage.setAttribute("x", viewBox[0] + (left * scale));
+                injectedImage.setAttribute("y", viewBox[1] + (top * scale));
+                injectedImage.setAttribute("width", width * scale);
+                injectedImage.setAttribute("height", height * scale);
+                injectedImage.setAttribute("preserveAspectRatio", "xMidYMid meet");
+
+                // Append it so it's on top of background but behind text, or last to be on top of everything. 
+                // Adding at the end means it overlays the text. 
+                svg.appendChild(injectedImage);
+            }
+
+            const ser = new XMLSerializer();
+            const svgData = ser.serializeToString(svg);
+
+            // Immediately cleanup injected image so the live preview isn't doubled
+            if (injectedImage) {
+                svg.removeChild(injectedImage);
+            }
+
+            if(oldW) svg.setAttribute("width", oldW); else svg.removeAttribute("width");
+            if(oldH) svg.setAttribute("height", oldH); else svg.removeAttribute("height");
+
+            const blob = new Blob([svgData], {type: "image/svg+xml;charset=utf-8"});
+            const url = URL.createObjectURL(blob);
+            
+            const img = new Image();
+            img.onload = function() {
+                const canvas = document.createElement("canvas");
+                canvas.width = renderSize;
+                canvas.height = renderSize;
+                const ctx = canvas.getContext("2d");
+                
+                ctx.fillStyle = "#ffffff";
+                ctx.fillRect(0,0, renderSize, renderSize);
+                ctx.drawImage(img, 0, 0, renderSize, renderSize);
+                
+                saveFile(canvas.toDataURL("image/png"), "quran_spiral_8k.png");
+                URL.revokeObjectURL(url);
+                status.innerText = "Done";
+            };
+            
+            setTimeout(() => {
+                img.src = url;
+            }, 100);
+        }
+
+        function saveFile(url, name) {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = name;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+    </script>
+</body>
+</html>
