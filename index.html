@@ -576,9 +576,15 @@
         function downloadPNG() {
             const svg = document.getElementById('mainSvg');
             const status = document.getElementById('status');
-            status.innerText = "Generating 8K PNG...";
+            
+            // Check if user has an image added
+            const isImageAdded = overlayBase64 && overlay.style.display !== 'none';
+            
+            // Set render size dynamically based on image presence
+            const renderSize = isImageAdded ? 12000 : 8000;
+            
+            status.innerText = `Generating ${isImageAdded ? '12K' : '8K'} PNG...`;
 
-            const renderSize = 8000;
             const oldW = svg.getAttribute("width");
             const oldH = svg.getAttribute("height");
             svg.setAttribute("width", renderSize);
@@ -587,31 +593,35 @@
 
             // --- INJECT HTML IMAGE INTO SVG BEFORE EXPORT ---
             let injectedImage = null;
-            if (overlayBase64 && overlay.style.display !== 'none') {
-                // 1. Get true on-screen dimensions to calculate actual relative position
-                const svgRect = svg.getBoundingClientRect();
-                const overlayRect = overlay.getBoundingClientRect();
+            if (isImageAdded) {
+                // 1. Bypass screen measurements (getBoundingClientRect) to avoid mobile scale issues
+                // Read EXACT CSS values relative to the 800x800 #paper box
+                const left = parseFloat(overlay.style.left) || 300;
+                const top = parseFloat(overlay.style.top) || 300;
+                
+                const compStyle = window.getComputedStyle(overlay);
+                const width = parseFloat(compStyle.width);
+                const height = parseFloat(compStyle.height);
 
-                // 2. Calculate offset of overlay relative to the SVG container visually
-                const relativeX = overlayRect.left - svgRect.left;
-                const relativeY = overlayRect.top - svgRect.top;
-
-                // 3. Map to SVG viewBox coordinates dynamically
+                // 2. Map dynamically to the internal SVG coordinates
                 const viewBox = svg.getAttribute("viewBox").split(' ').map(Number);
                 
-                // 4. Calculate true scaling factor (Internal SVG units per Screen Pixel)
-                const scaleX = viewBox[2] / svgRect.width;
-                const scaleY = viewBox[3] / svgRect.height;
+                // Scale factor: ViewBox internal dimensions divided by the fixed 800px paper
+                const scaleX = viewBox[2] / 800;
+                const scaleY = viewBox[3] / 800;
 
                 injectedImage = document.createElementNS("http://www.w3.org/2000/svg", "image");
                 injectedImage.setAttributeNS("http://www.w3.org/1999/xlink", "href", overlayBase64);
                 injectedImage.setAttribute("href", overlayBase64); // Fallback
                 
-                // 5. Apply precise math based on actual screen render
-                injectedImage.setAttribute("x", viewBox[0] + (relativeX * scaleX));
-                injectedImage.setAttribute("y", viewBox[1] + (relativeY * scaleY));
-                injectedImage.setAttribute("width", overlayRect.width * scaleX);
-                injectedImage.setAttribute("height", overlayRect.height * scaleY);
+                // Apply strict coordinate mapping
+                injectedImage.setAttribute("x", viewBox[0] + (left * scaleX));
+                injectedImage.setAttribute("y", viewBox[1] + (top * scaleY));
+                injectedImage.setAttribute("width", width * scaleX);
+                injectedImage.setAttribute("height", height * scaleY);
+                
+                // Guarantee the highest possible resolution when browser renders it onto the massive canvas
+                injectedImage.setAttribute("image-rendering", "high-quality");
                 injectedImage.setAttribute("preserveAspectRatio", "xMidYMid meet");
 
                 svg.appendChild(injectedImage);
@@ -642,7 +652,7 @@
                 ctx.fillRect(0,0, renderSize, renderSize);
                 ctx.drawImage(img, 0, 0, renderSize, renderSize);
                 
-                saveFile(canvas.toDataURL("image/png"), "quran_spiral_8k.png");
+                saveFile(canvas.toDataURL("image/png"), `quran_spiral_${isImageAdded ? '12k' : '8k'}.png`);
                 URL.revokeObjectURL(url);
                 status.innerText = "Done";
             };
