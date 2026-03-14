@@ -11,13 +11,13 @@
         /* --- STYLESSSSS --- */
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background-color: #222; /* Dark Studio BG */
+            background-color: #222; 
             margin: 0; padding: 0;
             height: 100vh;
             display: flex; flex-direction: column;
         }
 
-        /* --- CONTROL PANEL CPL --- */
+        /* --- CONTROL PANEL --- */
         .controls {
             background: white;
             padding: 8px;
@@ -33,10 +33,7 @@
             display: flex; flex-direction: column; justify-content: center;
         }
         
-        /* Flex Wrap added to allow wrapping on mobile */
         .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-        
-        /* Keeps labels and their inputs together when wrapping */
         .item-pair { display: flex; align-items: center; gap: 3px; }
 
         .group-label { 
@@ -70,10 +67,10 @@
 
         .scroll-container {
             width: 100%; height: 100%;
-            overflow: auto; /* Allow native scrolling */
+            overflow: auto; 
             display: flex; justify-content: center; align-items: flex-start;
             padding: 50px;
-            touch-action: pan-x pan-y; /* Enable touch gestures */
+            touch-action: pan-x pan-y; 
         }
 
         #paper {
@@ -81,39 +78,54 @@
             width: 800px; height: 800px;
             box-shadow: 0 0 60px rgba(0,0,0,0.6);
             transition: width 0.1s, height 0.1s;
-            position: relative; /* REQUIRED for image overlay */
+            position: relative; /* CRITICAL for absolute positioning of overlay */
         }
 
         svg { width: 100%; height: 100%; display: block; }
-        
-        /* Font Config - Default placeholder before JS loads */
         text { font-family: 'Amiri', 'Arial', sans-serif; font-weight: 700; direction: rtl; }
 
         /* --- IMAGE DRAGGABLE OVERLAY --- */
         #overlayContainer {
             display: none;
             position: absolute;
-            top: 300px; left: 300px; /* Center-ish default start */
+            top: 300px; left: 300px; 
             width: 200px; height: 200px;
             border: 2px dashed #007bff;
             cursor: move;
-            resize: both; /* Native browser resize handles */
-            overflow: hidden;
+            /* Removed native 'resize' as it fails on mobile touch screens */
             z-index: 10;
             box-sizing: border-box;
-            background: rgba(255,255,255,0.01); /* Prevent empty click-throughs */
-            touch-action: none; /* Prevents mobile browser from scrolling while dragging */
+            background: rgba(255,255,255,0.01); 
+            touch-action: none; /* Prevents scrolling while dragging */
         }
+        
         #overlayImage {
             width: 100%; height: 100%;
-            object-fit: contain; /* Keeps aspect ratio inside square box */
-            pointer-events: none; /* Let drag events hit container */
+            object-fit: contain; 
+            pointer-events: none; 
         }
+
+        /* NEW: Custom Touch-Friendly Resize Handle */
+        .resize-handle {
+            position: absolute;
+            bottom: -5px; right: -5px;
+            width: 28px; height: 28px;
+            background: #007bff;
+            border: 2px solid white;
+            border-radius: 50%;
+            cursor: se-resize;
+            z-index: 20;
+            touch-action: none;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+
         .close-img-btn {
-            position: absolute; top: 0; right: 0;
-            background: red; color: white; border: none;
-            cursor: pointer; padding: 4px 8px;
+            position: absolute; top: -10px; right: -10px;
+            background: red; color: white; border: 2px solid white; border-radius: 50%;
+            cursor: pointer; width: 26px; height: 26px;
             font-size: 12px; font-weight: bold;
+            display: flex; justify-content: center; align-items: center; padding: 0;
+            z-index: 20; box-shadow: 0 2px 5px rgba(0,0,0,0.3);
         }
 
     </style>
@@ -215,9 +227,10 @@
             <div id="paper">
                 <svg id="mainSvg" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"></svg>
                 
-                <div id="overlayContainer" style="left: 300px; top: 300px;">
+                <div id="overlayContainer">
                     <img id="overlayImage" src="" />
                     <button class="close-img-btn" onclick="removeImage()">X</button>
+                    <div class="resize-handle" id="resizer"></div>
                 </div>
             </div>
         </div>
@@ -229,7 +242,6 @@
         let fullText = "";
         let isManual = false;
         
-        // Font Variables
         let loadedFonts = { alqalam: null, saleem: null, custom: null };
         let customFontData = null; 
         let currentFontFamily = "'Amiri', 'Arial', sans-serif"; 
@@ -244,7 +256,6 @@
             });
         }
 
-        // --- AUTOMATIC LOADING OF FONTS ---
         window.onload = async () => {
             const stat = document.getElementById('status');
             stat.innerText = "Loading Fonts...";
@@ -293,44 +304,79 @@
             }
         };
 
-        // --- DRAG AND DROP IMAGE LOGIC ---
+        // --- CUSTOM DRAG AND RESIZE LOGIC (Mobile Friendly) ---
         let overlayBase64 = null;
         const overlay = document.getElementById('overlayContainer');
-        let isDragging = false, startX, startY, startLeft, startTop;
+        const resizer = document.getElementById('resizer');
+        
+        let isDragging = false;
+        let isResizing = false;
+        let startX, startY, startLeft, startTop, startWidth, startHeight;
 
+        // Container Drag Events
         overlay.addEventListener('mousedown', startDrag);
         overlay.addEventListener('touchstart', startDrag, {passive: false});
-        window.addEventListener('mousemove', drag);
-        window.addEventListener('touchmove', drag, {passive: false});
-        window.addEventListener('mouseup', stopDrag);
-        window.addEventListener('touchend', stopDrag);
+        
+        // Resizer Node Events
+        resizer.addEventListener('mousedown', startResize);
+        resizer.addEventListener('touchstart', startResize, {passive: false});
+
+        // Global Move/Stop Events
+        window.addEventListener('mousemove', handleMove);
+        window.addEventListener('touchmove', handleMove, {passive: false});
+        window.addEventListener('mouseup', stopAll);
+        window.addEventListener('touchend', stopAll);
 
         function startDrag(e) {
-            if (e.target.tagName.toLowerCase() === 'button') return;
-            const rect = overlay.getBoundingClientRect();
+            if (e.target.id === 'resizer' || e.target.tagName.toLowerCase() === 'button') return;
+            e.preventDefault();
+            isDragging = true;
             
-            // Allow native CSS resize to trigger instead of drag if clicking bottom right corner
             const clientX = e.clientX || e.touches[0].clientX;
             const clientY = e.clientY || e.touches[0].clientY;
-            if (clientX > rect.right - 25 && clientY > rect.bottom - 25) return; 
-
-            isDragging = true;
             startX = clientX;
             startY = clientY;
-            startLeft = parseFloat(overlay.style.left) || 300;
-            startTop = parseFloat(overlay.style.top) || 300;
-            e.preventDefault();
+            
+            // USE DOM OFFSET INSTEAD OF COMPUTED STYLE FOR ACCURACY
+            startLeft = overlay.offsetLeft; 
+            startTop = overlay.offsetTop;
         }
 
-        function drag(e) {
-            if (!isDragging) return;
+        function startResize(e) {
+            e.preventDefault();
+            e.stopPropagation(); // Prevents dragging from triggering simultaneously
+            isResizing = true;
+            
+            const clientX = e.clientX || e.touches[0].clientX;
+            const clientY = e.clientY || e.touches[0].clientY;
+            startX = clientX;
+            startY = clientY;
+            
+            // USE DOM OFFSET FOR ACCURATE SIZING
+            startWidth = overlay.offsetWidth;
+            startHeight = overlay.offsetHeight;
+        }
+
+        function handleMove(e) {
+            if (!isDragging && !isResizing) return;
+            e.preventDefault();
+            
             const clientX = e.clientX || (e.touches && e.touches[0].clientX);
             const clientY = e.clientY || (e.touches && e.touches[0].clientY);
-            overlay.style.left = (startLeft + clientX - startX) + 'px';
-            overlay.style.top = (startTop + clientY - startY) + 'px';
+            
+            if (isDragging) {
+                overlay.style.left = (startLeft + clientX - startX) + 'px';
+                overlay.style.top = (startTop + clientY - startY) + 'px';
+            } else if (isResizing) {
+                overlay.style.width = Math.max(50, startWidth + clientX - startX) + 'px';
+                overlay.style.height = Math.max(50, startHeight + clientY - startY) + 'px';
+            }
         }
 
-        function stopDrag() { isDragging = false; }
+        function stopAll() { 
+            isDragging = false; 
+            isResizing = false; 
+        }
 
         async function handleImageUpload(e) {
             const file = e.target.files[0];
@@ -339,11 +385,16 @@
                 overlayBase64 = await blobToBase64(file);
                 document.getElementById('overlayImage').src = overlayBase64;
                 overlay.style.display = 'block';
+                // Reset size/position when new image added
+                overlay.style.width = '200px';
+                overlay.style.height = '200px';
+                overlay.style.left = '300px';
+                overlay.style.top = '300px';
             } catch(err) {
                 console.error(err);
                 alert("Failed to load image");
             }
-            e.target.value = ''; // reset
+            e.target.value = ''; 
         }
 
         function removeImage() {
@@ -572,15 +623,12 @@
             });
         }
 
-        // --- EXPORT WITH IMAGE INJECTION ---
+        // --- BULLETPROOF EXPORT MAPPING ---
         function downloadPNG() {
             const svg = document.getElementById('mainSvg');
             const status = document.getElementById('status');
             
-            // Check if user has an image added
             const isImageAdded = overlayBase64 && overlay.style.display !== 'none';
-            
-            // Set render size dynamically based on image presence
             const renderSize = isImageAdded ? 12000 : 8000;
             
             status.innerText = `Generating ${isImageAdded ? '12K' : '8K'} PNG...`;
@@ -591,36 +639,32 @@
             svg.setAttribute("height", renderSize);
             svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
 
-            // --- INJECT HTML IMAGE INTO SVG BEFORE EXPORT ---
             let injectedImage = null;
             if (isImageAdded) {
-                // 1. Bypass screen measurements (getBoundingClientRect) to avoid mobile scale issues
-                // Read EXACT CSS values relative to the 800x800 #paper box
-                const left = parseFloat(overlay.style.left) || 300;
-                const top = parseFloat(overlay.style.top) || 300;
-                
-                const compStyle = window.getComputedStyle(overlay);
-                const width = parseFloat(compStyle.width);
-                const height = parseFloat(compStyle.height);
+                // EXPLICIT FIX: Using offsetLeft/Width bypasses any mobile zoom/scaling weirdness.
+                // It reads the raw positional data inside the 800x800 #paper element directly.
+                const rawLeft = overlay.offsetLeft;
+                const rawTop = overlay.offsetTop;
+                const rawWidth = overlay.offsetWidth;
+                const rawHeight = overlay.offsetHeight;
 
-                // 2. Map dynamically to the internal SVG coordinates
+                // Map to the internal coordinate system of the mathematical SVG
                 const viewBox = svg.getAttribute("viewBox").split(' ').map(Number);
                 
-                // Scale factor: ViewBox internal dimensions divided by the fixed 800px paper
+                // Since #paper is exactly 800px, calculate SVG units per 1 pixel
                 const scaleX = viewBox[2] / 800;
                 const scaleY = viewBox[3] / 800;
 
                 injectedImage = document.createElementNS("http://www.w3.org/2000/svg", "image");
                 injectedImage.setAttributeNS("http://www.w3.org/1999/xlink", "href", overlayBase64);
-                injectedImage.setAttribute("href", overlayBase64); // Fallback
+                injectedImage.setAttribute("href", overlayBase64); 
                 
-                // Apply strict coordinate mapping
-                injectedImage.setAttribute("x", viewBox[0] + (left * scaleX));
-                injectedImage.setAttribute("y", viewBox[1] + (top * scaleY));
-                injectedImage.setAttribute("width", width * scaleX);
-                injectedImage.setAttribute("height", height * scaleY);
+                // Map coordinates mathematically
+                injectedImage.setAttribute("x", viewBox[0] + (rawLeft * scaleX));
+                injectedImage.setAttribute("y", viewBox[1] + (rawTop * scaleY));
+                injectedImage.setAttribute("width", rawWidth * scaleX);
+                injectedImage.setAttribute("height", rawHeight * scaleY);
                 
-                // Guarantee the highest possible resolution when browser renders it onto the massive canvas
                 injectedImage.setAttribute("image-rendering", "high-quality");
                 injectedImage.setAttribute("preserveAspectRatio", "xMidYMid meet");
 
@@ -630,7 +674,6 @@
             const ser = new XMLSerializer();
             const svgData = ser.serializeToString(svg);
 
-            // Immediately cleanup injected image so the live preview isn't doubled
             if (injectedImage) {
                 svg.removeChild(injectedImage);
             }
